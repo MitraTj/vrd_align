@@ -430,14 +430,14 @@ class DynamicFilterContext(nn.Module):
 
     ########################################################
 
-class RelModelDynamicFilter(nn.Module):
+class RelModelAlign(nn.Module):
 
     def __init__(self, classes, rel_classes, mode='sgdet', num_gpus=1, use_vision=True, require_overlap_det=True,
                  embed_dim=200, hidden_dim=256, pooling_dim=2048, use_resnet=False, thresh=0.01,
                  use_proposals=False, rec_dropout=0.0, use_bias=True, use_tanh=True,
                  limit_vision=True, sl_pretrain=False, eval_rel_objs=False, num_iter=-1, reduce_input=False, 
                  post_nms_thresh=0.5):
-        super(RelModelDynamicFilter, self).__init__()
+        super(RelModelAlign, self).__init__()
         self.classes = classes
         self.rel_classes = rel_classes
         self.num_gpus = num_gpus

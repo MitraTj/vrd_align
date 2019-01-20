@@ -1,1 +1,1 @@
-# Main Branch
+./scripts/train_align.sh

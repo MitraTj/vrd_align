@@ -9,4 +9,4 @@ nms:
 roi_align:
 	cd lib/fpn/roi_align; make
 lstm:
-	cd lib/lstm/highway_lstm_cuda; ./make.sh
+	cd lib/lstm/highway_lstm_cuda; chmod +x make.sh; ./make.sh

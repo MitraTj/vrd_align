@@ -35,12 +35,8 @@ alpha_rel_loss = 1.0
 constant_baseline = 0.5
 baseline_decay = 0.99
 
-if conf.model == 'dynamic_filter':
-    from lib.rel_model_dynamic_filter import RelModelDynamicFilter as RelModel
-# elif conf.model == 'sd_nocomm':
-#     from lib.rel_model_nocomm import RelModelSceneDynamicNocomm as RelModel
-# elif conf.model == 'motifnet':
-#     from lib.rel_model import RelModel
+if conf.model == 'align':
+    from lib.rel_model_align import RelModelAlign as RelModel
 else:
     raise ValueError()
 
@@ -56,24 +52,6 @@ train_loader, val_loader = VGDataLoader.splits(train, val, mode='rel',
                                                num_workers=conf.num_workers,
                                                num_gpus=conf.num_gpus,
                                                return_fn=False)
-
-# # save val gt for evaluation
-# # set return_fn=True
-# import pdb; pdb.set_trace()
-# val_for_eval = {}
-# for idx_i in tqdm(range(len(val))):
-#     key_part = val.filenames[idx_i].split('/')
-#     entry_key = '{}_{}'.format(key_part[-2], key_part[-1].split('.')[0])
-#     gt_entry = {
-#         'gt_classes': val.gt_classes[idx_i].copy(),
-#         'gt_relations': val.relationships[idx_i].copy(),
-#         'gt_boxes': val.gt_boxes[idx_i].copy(),
-#     }
-#     val_for_eval[entry_key] = gt_entry
-# save_path = os.path.join('data', 'val_for_eval', 'val_gt.pkl')
-# if not os.path.exists(os.path.join('data', 'val_for_eval')):
-#     os.makedirs(os.path.join('data', 'val_for_eval',))
-# pkl.dump(val_for_eval, open(save_path, 'wb'))
 
 
 detector = RelModel(classes=train.ind_to_classes, rel_classes=train.ind_to_predicates,
