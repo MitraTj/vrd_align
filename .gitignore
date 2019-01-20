@@ -1,0 +1,6 @@
+sftp-config.json
+data/stanford_filtered/*
+data/*
+checkpoints/*
+
+*/__pycache__/*
