@@ -88,14 +88,8 @@ print(print_para(detector), flush=True)
 def get_optim(lr):
     # Lower the learning rate on the VGG fully connected layers by 1/10th. It's a hack, but it helps
     # stabilize the models.
-    if conf.debug_type in ['test5_8_bn', 'test6_1', 'test6_1_spatial', 'test6_2', 'test6_2_spatial', 'test6_3', 'test6_4', 'test6_5']:
-        pretrained_params = [p for n,p in detector.named_parameters() if ('roi_fmap_obj' in n) and p.requires_grad]
-        non_pretrained_params = [p for n,p in detector.named_parameters() if not ('roi_fmap_obj' in n) and p.requires_grad]
-    elif conf.debug_type in ['test6_6']:
-        pretrained_params = [p for n,p in detector.named_parameters() if ('roi_fmap_obj' in n or 'obj_compress' in n) and p.requires_grad]
-        non_pretrained_params = [p for n,p in detector.named_parameters() if not ('roi_fmap_obj' in n or 'obj_compress' in n) and p.requires_grad]
-    else:
-        raise ValueError
+    pretrained_params = [p for n,p in detector.named_parameters() if ('roi_fmap_obj' in n or 'obj_compress' in n) and p.requires_grad]
+    non_pretrained_params = [p for n,p in detector.named_parameters() if not ('roi_fmap_obj' in n or 'obj_compress' in n) and p.requires_grad]
 
     params = [{'params': pretrained_params, 'lr': lr / 10.0}, {'params': non_pretrained_params}]
 
@@ -162,31 +156,14 @@ else:
     start_epoch = -1
     optimistic_restore(detector.detector, ckpt['state_dict'])
 
-    ######### use cmat forward ########
-    if conf.debug_type in ['test6_0_debug2']:
-        detector.context.roi_fmap[1][0].weight.data.copy_(ckpt['state_dict']['roi_fmap.0.weight'])
-        detector.context.roi_fmap[1][3].weight.data.copy_(ckpt['state_dict']['roi_fmap.3.weight'])
-        detector.context.roi_fmap[1][0].bias.data.copy_(ckpt['state_dict']['roi_fmap.0.bias'])
-        detector.context.roi_fmap[1][3].bias.data.copy_(ckpt['state_dict']['roi_fmap.3.bias'])
-
     detector.context.roi_fmap_obj[0].weight.data.copy_(ckpt['state_dict']['roi_fmap.0.weight'])
     detector.context.roi_fmap_obj[3].weight.data.copy_(ckpt['state_dict']['roi_fmap.3.weight'])
     detector.context.roi_fmap_obj[0].bias.data.copy_(ckpt['state_dict']['roi_fmap.0.bias'])
     detector.context.roi_fmap_obj[3].bias.data.copy_(ckpt['state_dict']['roi_fmap.3.bias'])
 
-    # new add
-    if conf.debug_type in ['test5_8_bn', 'test6_1', 'test6_1_spatial', 'test6_2', 'test6_2_spatial', 'test6_3', 'test6_4', 'test6_5']:
-        pass
-    elif conf.debug_type in ['test6_6']:
-        detector.context.obj_compress.weight.data.copy_(ckpt['state_dict']['score_fc.weight'])
-        detector.context.obj_compress.bias.data.copy_(ckpt['state_dict']['score_fc.bias'])
-    else:
-        raise ValueError
+    detector.context.obj_compress.weight.data.copy_(ckpt['state_dict']['score_fc.weight'])
+    detector.context.obj_compress.bias.data.copy_(ckpt['state_dict']['score_fc.bias'])
 
-    # detector.context.roi_fmap_rel[1][0].weight.data.copy_(ckpt['state_dict']['roi_fmap.0.weight'])
-    # detector.context.roi_fmap_rel[1][3].weight.data.copy_(ckpt['state_dict']['roi_fmap.3.weight'])
-    # detector.context.roi_fmap_rel[1][0].bias.data.copy_(ckpt['state_dict']['roi_fmap.0.bias'])
-    # detector.context.roi_fmap_rel[1][3].bias.data.copy_(ckpt['state_dict']['roi_fmap.3.bias'])
 
 detector.cuda()
 
@@ -228,14 +205,7 @@ def train_batch(b, verbose=False):
 
     losses = {}
 
-    if conf.debug_type in ['test6_0_debug2', 'test6_0_every']:
-        losses['class_loss'] = F.cross_entropy(result.rm_obj_logits, result.rm_obj_labels)
-        for iter_i in range(conf.num_iter-1):
-            losses['class_loss'] += F.cross_entropy(result.rm_obj_logits_list[iter_i], result.rm_obj_labels)
-        losses['class_loss'] /= conf.num_iter
-    else:
-        losses['class_loss'] = F.cross_entropy(result.rm_obj_logits, result.rm_obj_labels)
-    # losses['class_loss'] = Variable(torch.from_numpy(np.zeros((1,)))).float().cuda()
+    losses['class_loss'] = F.cross_entropy(result.rm_obj_logits, result.rm_obj_labels)
     losses['rel_loss'] = F.binary_cross_entropy_with_logits(result.rel_logits, result.rel_labels[:, 3:].float())
     losses['rel_loss'] *= result.rel_labels[:, 3:].size(1)
 
@@ -329,126 +299,6 @@ def val_batch(batch_num, b, evaluator, val_gt=None):
             return gt_entry, pred_entry
 
 
-def select_example_epoch():
-
-    freq_bias_weights = detector.context.freq_bias.obj_baseline.weight.data.cpu().numpy()
-    evaluator = BasicSceneGraphEvaluator.all_modes()
-
-    detector.eval()
-    all_res = []
-    start = time.time()
-    
-    ind_to_classes = val.ind_to_classes
-    ind_to_predicates = val.ind_to_predicates
-    # import pdb; pdb.set_trace()
-    for b, batch in enumerate(tqdm(val_loader)):
-
-        res = select_example_batch(batch, verbose=b % (conf.print_interval*10) == 0, \
-                    evaluator=evaluator, freq_bias_weights=freq_bias_weights)
-        res['scale'] = val[b]['scale']
-        res['img_size'] = val[b]['img_size']
-        res['filename'] = val[b]['fn']
-        all_res.append(res)
-        # if b == 10:
-        #     break
-
-    pkl.dump(all_res, open('val_detect_results.pkl', 'wb'))
-    print('Finish!')
-    # tr_np = np.array(tr)
-    # np.savez(open('examples.npy', 'wb'), example=tr_np)
-    # import pdb; pdb.set_trace()
-
-
-def select_example_batch(b, verbose=False, evaluator=None, freq_bias_weights=None):
-    """
-    need select the different prediction for different steps
-    """
-    import pdb; pdb.set_trace()
-    # assert conf.mode == 'sgcls'
-    result = detector[b]
-
-    if result is None:
-        return pd.Series([0.0])
-
-
-    num_classes = len(train.ind_to_classes)
-    num_relations = len(train.ind_to_predicates)
-
-    all_obj_scores_list = []
-    all_obj_preds_list = []
-    for each_obj_dists in result.rm_obj_dists_list:
-        each_obj_dists = F.softmax(each_obj_dists, 1)
-        each_top_N_obj_dists, each_top_N_obj_preds = each_obj_dists[:, 1:].sort(1, descending=True)
-        each_top_N_obj_preds = each_top_N_obj_preds[:, 0] + 1
-
-        each_top_N_obj_preds_np = each_top_N_obj_preds.data.cpu().numpy()
-        each_top_N_obj_dists_np = each_top_N_obj_dists.data.cpu().numpy()
-
-        each_obj_scores_np = each_top_N_obj_dists_np[:, 0]
-        all_obj_scores_list.append(each_obj_scores_np)
-        all_obj_preds_list.append(each_top_N_obj_preds_np)
-
-    bboxes_np = result.rm_box_priors.data.cpu().numpy()
-    batch_img_inds = b.gt_classes[:, 0].data
-
-
-    all_rel_inds_np = result.all_rel_inds.cpu().numpy()
-    all_rel_logits_np = result.all_rel_logits.data.cpu().numpy()
-
-    import pdb; pdb.set_trace()
-    image_recall = []
-    pred_sample_entry_list = []
-    for each_obj_preds, each_obj_scores in zip(all_obj_preds_list, all_obj_scores_list):
-        sample_freq_bias_idx = each_obj_preds[all_rel_inds_np[:, 1]] * num_classes + each_obj_preds[all_rel_inds_np[:, 2]]
-        sample_rel_scores = all_rel_logits_np + freq_bias_weights[sample_freq_bias_idx]
-        sample_rel_scores_np = np_sigmoid(sample_rel_scores)
-        sample_rel_scores_np[:, 0] = 0.0
-
-        for i, gt_obj_s, gt_obj_e in enumerate_by_image(batch_img_inds):
-            # clean recall cache
-            evaluator[conf.mode].result_dict[conf.mode+'_recall'][20] = []
-            evaluator[conf.mode].result_dict[conf.mode+'_recall'][50] = []
-            evaluator[conf.mode].result_dict[conf.mode+'_recall'][100] = []
-
-            gt_rel_s = (b.gt_rels[:, 0] == i).nonzero().min().data.cpu().numpy().item()
-            gt_rel_e = (b.gt_rels[:, 0] == i).nonzero().max().data.cpu().numpy().item()+1 # the last one is not included      
-            pred_obj_s = (result.im_inds == i).nonzero().min().data.cpu().numpy().item()
-            pred_obj_e = (result.im_inds == i).nonzero().max().data.cpu().numpy().item()+1 
-            pred_rel_s = (result.all_rel_inds[:, 0] == i).nonzero().min()
-            pred_rel_e = (result.all_rel_inds[:, 0] == i).nonzero().max()+1
-
-            gt_entry = {
-                'gt_classes': b.gt_classes[gt_obj_s:gt_obj_e, 1].data.cpu().numpy().copy(),
-                'gt_relations': dist2idx(b.gt_rels[gt_rel_s:gt_rel_e, 1:].data.cpu().numpy().copy()),
-                'gt_boxes': b.gt_boxes[gt_obj_s:gt_obj_e].data.cpu().numpy().copy() * BOX_SCALE/IM_SCALE ,}
-
-            boxes_sample, objs_sample, obj_scores_sample, rels_sample, pred_scores_sample = \
-                                                                                filter_dets_np(bboxes_np[pred_obj_s: pred_obj_e], 
-                                                                                each_obj_scores[pred_obj_s: pred_obj_e],
-                                                                                each_obj_preds[pred_obj_s: pred_obj_e], 
-                                                                                all_rel_inds_np[pred_rel_s: pred_rel_e, 1:] - pred_obj_s, 
-                                                                                sample_rel_scores_np[pred_rel_s: pred_rel_e])
-
-            pred_sample_entry = {
-                'pred_boxes': boxes_sample * BOX_SCALE/IM_SCALE,
-                'pred_classes': objs_sample, 'pred_rel_inds': rels_sample,
-                'obj_scores': obj_scores_sample, 'rel_scores': pred_scores_sample,}
-
-            evaluator[conf.mode].evaluate_scene_graph_entry(gt_entry, pred_sample_entry)
-            recall_sample_100 = evaluator[conf.mode].result_dict[conf.mode+'_recall'][20][-1]
-            image_recall.append(recall_sample_100)
-
-            save_pred_sample_entry = {
-                'pred_boxes': boxes_sample * BOX_SCALE/IM_SCALE,
-                'pred_classes': objs_sample, 'pred_rel_inds': rels_sample,
-                'pred_predicates': pred_scores_sample.argmax(1)}
-            pred_sample_entry_list.append(
-                save_pred_sample_entry
-                )
-        import pdb; pdb.set_trace()
-
-    return {'image_recall': image_recall, 'pred_entry': pred_sample_entry_list,
-            'gt_entry': gt_entry}
 
 print("Training starts now!")
 optimizer, scheduler = get_optim(conf.lr * conf.num_gpus * conf.batch_size)
