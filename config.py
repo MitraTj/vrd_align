@@ -130,6 +130,7 @@ class ModelConfig(object):
         self.reward_type = None
         # self.baseline_type = None
         self.save_detection_results = None
+        self.pooling_size = None
         self.parser = self.setup_parser()
         self.args = vars(self.parser.parse_args())
 
@@ -241,4 +242,5 @@ class ModelConfig(object):
         parser.add_argument('-reward_type', dest='reward_type', type=int, default=50)
         # parser.add_argument('-baseline_type', dest='baseline_type', type=str, default='counterfactual')
         parser.add_argument('-save_detection_results', dest='save_detection_results', action='store_true')
+        parser.add_argument('-pooling_size', dest='pooling_size', type=int, default=7)
         return parser

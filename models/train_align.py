@@ -88,8 +88,12 @@ print(print_para(detector), flush=True)
 def get_optim(lr):
     # Lower the learning rate on the VGG fully connected layers by 1/10th. It's a hack, but it helps
     # stabilize the models.
-    pretrained_params = [p for n,p in detector.named_parameters() if ('roi_fmap_obj' in n or 'obj_compress' in n) and p.requires_grad]
-    non_pretrained_params = [p for n,p in detector.named_parameters() if not ('roi_fmap_obj' in n or 'obj_compress' in n) and p.requires_grad]
+    if conf.pooling_size == 7:
+        pretrained_params = [p for n,p in detector.named_parameters() if ('roi_fmap_obj' in n or 'obj_compress' in n) and p.requires_grad]
+        non_pretrained_params = [p for n,p in detector.named_parameters() if not ('roi_fmap_obj' in n or 'obj_compress' in n) and p.requires_grad]
+    else:
+        pretrained_params = []
+        non_pretrained_params = [p for n,p in detector.named_parameters() if p.requires_grad]
 
     params = [{'params': pretrained_params, 'lr': lr / 10.0}, {'params': non_pretrained_params}]
 
@@ -156,13 +160,15 @@ else:
     start_epoch = -1
     optimistic_restore(detector.detector, ckpt['state_dict'])
 
-    detector.context.roi_fmap_obj[0].weight.data.copy_(ckpt['state_dict']['roi_fmap.0.weight'])
-    detector.context.roi_fmap_obj[3].weight.data.copy_(ckpt['state_dict']['roi_fmap.3.weight'])
-    detector.context.roi_fmap_obj[0].bias.data.copy_(ckpt['state_dict']['roi_fmap.0.bias'])
-    detector.context.roi_fmap_obj[3].bias.data.copy_(ckpt['state_dict']['roi_fmap.3.bias'])
+    # when use different pooling_size, can't use the pretrained weights any more
+    if conf.pooling_size == 7:
+        detector.context.roi_fmap_obj[0].weight.data.copy_(ckpt['state_dict']['roi_fmap.0.weight'])
+        detector.context.roi_fmap_obj[3].weight.data.copy_(ckpt['state_dict']['roi_fmap.3.weight'])
+        detector.context.roi_fmap_obj[0].bias.data.copy_(ckpt['state_dict']['roi_fmap.0.bias'])
+        detector.context.roi_fmap_obj[3].bias.data.copy_(ckpt['state_dict']['roi_fmap.3.bias'])
 
-    detector.context.obj_compress.weight.data.copy_(ckpt['state_dict']['score_fc.weight'])
-    detector.context.obj_compress.bias.data.copy_(ckpt['state_dict']['score_fc.bias'])
+        detector.context.obj_compress.weight.data.copy_(ckpt['state_dict']['score_fc.weight'])
+        detector.context.obj_compress.bias.data.copy_(ckpt['state_dict']['score_fc.bias'])
 
 
 detector.cuda()
@@ -304,7 +310,7 @@ print("Training starts now!")
 optimizer, scheduler = get_optim(conf.lr * conf.num_gpus * conf.batch_size)
 
 # import pdb; pdb.set_trace()
-# mAp = val_epoch()
+mAp = val_epoch()
 # import pdb; pdb.set_trace()
 
 # select_example_epoch()

@@ -58,7 +58,14 @@ class DynamicFilterContext(nn.Module):
         
         self.obj_compress = myNNLinear(self.pooling_dim, self.num_classes, bias=True)
 
-        self.roi_fmap_obj = load_vgg(pretrained=False).classifier
+        # self.roi_fmap_obj = load_vgg(pretrained=False).classifier
+        roi_fmap_obj = [myNNLinear(512*self.pooling_size*self.pooling_size, 4096, bias=True),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        myNNLinear(4096, 4096, bias=True),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5)]
+        self.roi_fmap_obj = nn.Sequential(*roi_fmap_obj)
 
         if self.use_bias:
             self.freq_bias = FrequencyBias()
@@ -72,12 +79,17 @@ class DynamicFilterContext(nn.Module):
         self.similar_fun = nn.Sequential(*similar_fun)
 
 
+        # roi_fmap = [Flattener(),
+        #     load_vgg(use_dropout=False, use_relu=False, use_linear=self.pooling_dim == 4096, pretrained=False).classifier,]
+        # if self.pooling_dim != 4096:
+        #     roi_fmap.append(nn.Linear(4096, self.pooling_dim))
+        # self.roi_fmap = nn.Sequential(*roi_fmap)
         roi_fmap = [Flattener(),
-            load_vgg(use_dropout=False, use_relu=False, use_linear=self.pooling_dim == 4096, pretrained=False).classifier,]
-        if self.pooling_dim != 4096:
-            roi_fmap.append(nn.Linear(4096, self.pooling_dim))
+                    nn.Linear(self.reduce_dim*2*self.pooling_size*self.pooling_size, 4096, bias=True),
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(p=0.5),
+                    nn.Linear(4096, 4096, bias=True)]
         self.roi_fmap = nn.Sequential(*roi_fmap)
-
 
         self.hidden_dim = hidden_dim
         self.rel_compress = myNNLinear(self.hidden_dim*3, self.num_rels)
@@ -130,22 +142,23 @@ class DynamicFilterContext(nn.Module):
         
         elif conf.debug_type in ['test1_1']:
 
-            S_fmaps_trans = S_fmaps.view(num_rels, self.reduce_dim, 7*7).transpose(2, 1)
-            O_fmaps_trans = O_fmaps.view(num_rels, self.reduce_dim, 7*7).transpose(2, 1)
+            S_fmaps_trans = S_fmaps.view(num_rels, self.reduce_dim, self.pooling_size*self.pooling_size).transpose(2, 1)
+            O_fmaps_trans = O_fmaps.view(num_rels, self.reduce_dim, self.pooling_size*self.pooling_size).transpose(2, 1)
 
-            S_fmaps_extend = S_fmaps_trans.repeat(1, 1, 49).view(num_rels, 49*49, self.reduce_dim)
-            O_fmaps_extend = O_fmaps_trans.repeat(1, 49, 1)
+            pooling_size_sq = self.pooling_size*self.pooling_size
+            S_fmaps_extend = S_fmaps_trans.repeat(1, 1, pooling_size_sq).view(num_rels, pooling_size_sq*pooling_size_sq, self.reduce_dim)
+            O_fmaps_extend = O_fmaps_trans.repeat(1, pooling_size_sq, 1)
 
             SO_fmaps_extend = torch.cat((S_fmaps_extend, O_fmaps_extend), dim=2)
             SO_fmaps_logits = self.similar_fun(SO_fmaps_extend)
-            SO_fmaps_logits = SO_fmaps_logits.view(num_rels, 49, 49) # (first dim is S_fmaps, second dim is O_fmaps)
+            SO_fmaps_logits = SO_fmaps_logits.view(num_rels, pooling_size_sq, pooling_size_sq) # (first dim is S_fmaps, second dim is O_fmaps)
 
             SO_fmaps_scores = F.softmax(SO_fmaps_logits, dim=1)
 
             weighted_S_fmaps = torch.matmul(SO_fmaps_scores.transpose(2, 1), S_fmaps_trans) # (num_rels, 49, 49) x (num_rels, 49, self.reduce_dim)
 
             last_SO_fmaps = torch.cat((weighted_S_fmaps, O_fmaps_trans), dim=2)
-            last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, 7, 7)
+            last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, self.pooling_size, self.pooling_size)
         else:
             raise ValueError
 
@@ -201,7 +214,8 @@ class RelModelAlign(nn.Module):
         assert mode in MODES
         self.mode = mode
 
-        self.pooling_size = 7
+        # self.pooling_size = 7
+        self.pooling_size = conf.pooling_size
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
         self.obj_dim = 2048 if use_resnet else 4096
