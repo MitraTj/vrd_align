@@ -1,6 +1,3 @@
-"""
-"""
-
 from dataloaders.visual_genome import VGDataLoader, VG
 import numpy as np
 import torch
