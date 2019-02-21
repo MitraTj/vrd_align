@@ -153,17 +153,17 @@ class DynamicFilterContext(nn.Module):
             O_fmaps_trans = O_fmaps.view(num_rels, self.reduce_dim, self.pooling_size*self.pooling_size).transpose(2, 1)
 
             pooling_size_sq = self.pooling_size*self.pooling_size
-            SO_fmaps_extendd = []
+            similar_fu = []
 #            import pdb; pdb.set_trace()
             for i in range(0, pooling_size_sq):
                 for j in range(0, pooling_size_sq):
                     #SO_fmaps_extend.append(torch.cat((S_fmaps_trans[:, i].transpose(0, 1), O_fmaps_trans[:, j].transpose(0, 1)), dim=1))
-                    SO_fmaps_extendd.append(torch.cat((S_fmaps_trans[:, i, :], O_fmaps_trans[:, j, :]), dim=1))
+                    self.similar_fun.append(torch.cat((S_fmaps_trans[:, i, :], O_fmaps_trans[:, j, :]), dim=1))
 #                    SO_fmaps_extend = torch.stack(SO_fmaps_extendd,1)
-            SO_fmaps_extendd = SO_fmaps_extendd.view(num_rels, self.reduce_dim, self.reduce_dim*2)
-            SO_fmaps_extend = torch.cat(SO_fmaps_extendd, 1)
+            #SO_fmaps_extendd = SO_fmaps_extendd.view(num_rels, self.reduce_dim, self.reduce_dim*2)
+            #SO_fmaps_extend = torch.cat(SO_fmaps_extendd, 1)
             import pdb; pdb.set_trace()
-            SO_fmaps_logits = self.similar_fun(SO_fmaps_extend)
+            #SO_fmaps_logits = self.similar_fun(SO_fmaps_extend)
             import pdb; pdb.set_trace()
             # SO_fmaps_logits= SO_fmaps_logits.view(num_rels, pooling_size_sq, pooling_size_sq) # wrong size
             SO_fmaps_logits= SO_fmaps_logits.view(num_rels, 2*self.reduce_dim, self.reduce_dim)
