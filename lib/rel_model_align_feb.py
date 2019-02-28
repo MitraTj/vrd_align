@@ -81,8 +81,22 @@ class DynamicFilterContext(nn.Module):
                       nn.ReLU(inplace =True),
                       nn.Dropout(p=0.5),
                       myNNLinear(self.reduce_dim, 1),
-                      ] 
-
+                      ]
+        '''
+         #### Modified
+        similar_fun = [myNNLinear(self.reduce_dim*2, self.reduce_dim),
+                       nn.BatchNorm2d(num_features=self.reduce_dim),
+                       nn.PReLU(inplace=True),
+                       nn.Dropout(p=0.5),
+                       myNNLinear(self.reduce_dim, self.reduce_dim),
+                       nn.BatchNorm2d(num_features=self.reduce_dim),
+                       nn.PReLU(inplace=True),
+                       nn.Dropout(p=0.5),
+                       myNNLinear(self.reduce_dim, 1),
+                       nn.Dropout(p=0.5)
+                      ]
+                      
+''' 
        self.similar_fun = nn.Sequential(*similar_fun)
 
 
