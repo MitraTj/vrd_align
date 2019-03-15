@@ -39,7 +39,7 @@ class DynamicFilterContext(nn.Module):
                  pooling_size=7, dropout_rate=0.2, use_bias=True, use_tanh=True, 
                  limit_vision=True, sl_pretrain=False, num_iter=-1, use_resnet=False,
                  reduce_input=False, debug_type=None, post_nms_thresh=0.5):
-        super(DynamicFilterContext, self).__init__()
+        super(DynamicFilterContext, self).__init__()    #-#compatible with Python2.x super(class,self).__init__()
         self.classes = classes
         self.rel_classes = rel_classes
         assert mode in MODES
