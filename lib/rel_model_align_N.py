@@ -158,6 +158,8 @@ class DynamicFilterContext(nn.Module):
             weighted_S_fmaps = torch.matmul(SO_fmaps_scores.transpose(2, 1), S_fmaps_trans) # (num_rels, 49, 49) x (num_rels, 49, self.reduce_dim)
 
             last_SO_fmaps = torch.cat((weighted_S_fmaps, O_fmaps_trans), dim=2)
+            ###
+            weighted_S_fmaps1= weighted_S_fmaps.cpu().data.numpy()
             last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, self.pooling_size, self.pooling_size)
             
             
