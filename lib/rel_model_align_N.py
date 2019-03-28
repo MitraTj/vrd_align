@@ -151,7 +151,10 @@ class DynamicFilterContext(nn.Module):
             O_fmaps_extend = O_fmaps_trans.unsqueeze(2)
             O_fmaps_extend = O_fmaps_extend.expand(-1, -1, pooling_size_sq, -1)
           # SO_fmaps_extend = torch.cat((S_fmaps_trans.unsqueeze(1).expand(-1, pooling_size_sq, -1, -1), O_fmaps_trans.unsqueeze(2).expand(-1, -1, pooling_s$
-            SO_fmaps_extend = torch.cat((S_fmaps_extend, O_fmaps_extend), dim=-1).view(num_rels, pooling_size_sq*pooling_size_sq, self.reduce_dim*2)
+           # SO_fmaps_extend = torch.cat((S_fmaps_extend, O_fmaps_extend), dim=-1).view(num_rels, pooling_size_sq*pooling_size_sq, self.reduce_dim*2)
+            SO_fmaps_extend = torch.cat((S_fmaps_extend, O_fmaps_extend), dim=-1).view(num_rels, self.reduce_dim*2, pooling_size_sq*pooling_size_sq)
+            Red= nn.Conv2d(1,512,kernel_size=25)
+(Pdb)       SO_fmaps_extend = conv(SO_fmaps_extend)
             SO_fmaps_logits = self.similar_fun(SO_fmaps_extend)
             SO_fmaps_logits = SO_fmaps_logits.view(num_rels, pooling_size_sq, pooling_size_sq) # (first dim is S_fmaps, second dim is O_fmaps)
             SO_fmaps_scores = F.softmax(SO_fmaps_logits, dim=1)
