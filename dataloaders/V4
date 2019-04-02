@@ -1,0 +1,47 @@
+"""
+File that involves dataloaders for the V4 Google dataset.
+"""
+
+import json
+import os
+
+import h5py
+import numpy as np
+import torch
+from PIL import Image
+from torch.utils.data import Dataset
+from torchvision.transforms import Resize, Compose, ToTensor, Normalize
+from dataloaders.blob import Blob
+from lib.fpn.box_intersections_cpu.bbox import bbox_overlaps
+from config import VG_IMAGES, IM_DATA_FN, VG_SGG_FN, VG_SGG_DICT_FN, BOX_SCALE, IM_SCALE, PROPOSAL_FN
+from dataloaders.image_transforms import SquarePad, Grayscale, Brightness, Sharpness, Contrast, \
+    RandomOrder, Hue, random_crop
+from collections import defaultdict
+#from pycocotools.coco import COCO
+
+class V4(Dataset):
+    def __init__(self, mode, roidb_file=VG_SGG_FN, dict_file=VG_SGG_DICT_FN,
+                 image_file=IM_DATA_FN, filter_empty_rels=True, num_im=-1, num_val_im=5000,
+                 filter_duplicate_rels=True, filter_non_overlap=True,
+                 use_proposals=False):
+                 
+  """
+        Torch dataset for VG
+        :param mode: Must be train, test, or val
+        :param roidb_file:  HDF5 containing the GT boxes, classes, and relationships
+        :param dict_file: JSON Contains mapping of classes/relationships to words
+        :param image_file: HDF5 containing image filenames
+        :param filter_empty_rels: True if we filter out images without relationships between
+                             boxes. One might want to set this to false if training a detector.
+        :param filter_duplicate_rels: Whenever we see a duplicate relationship we'll sample instead
+        :param num_im: Number of images in the entire dataset. -1 for all images.
+        :param num_val_im: Number of images in the validation set (must be less than num_im
+               unless num_im is -1.)
+        :param proposal_file: If None, we don't provide proposals. Otherwise file for where we get RPN
+            proposals
+        """
+        """
+        Torch for v4
+        num_val_im=204621
+        
+        """
