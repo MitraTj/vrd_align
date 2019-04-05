@@ -144,9 +144,9 @@ class ObjectDetector(nn.Module):
         :return: [num_rois, #dim] array
         """
         feature_pool = RoIAlignFunction(self.pooling_size, self.pooling_size, spatial_scale=1 / 16)(
-=            self.compress(features) if self.use_resnet else features, rois)    ##feature_pool,shape = [1536, 512, 7, 7]
+            self.compress(features) if self.use_resnet else features, rois)    ##feature_pool,shape = [1536, 512, 7, 7]
         return self.roi_fmap(feature_pool.view(rois.size(0), -1))  ##self.roi_fmap(feature_pool.view(rois.size(0), -1)).shape= [1536, 4096]
-
+        ## feature_pool.view(rois.size(0), -1)=[1536,25088] 
     def rpn_boxes(self, fmap, im_sizes, image_offset, gt_boxes=None, gt_classes=None, gt_rels=None,
                   train_anchor_inds=None, proposals=None):
         """
