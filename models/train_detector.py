@@ -29,8 +29,14 @@ if conf.coco:
                                                      num_workers=conf.num_workers,
                                                      num_gpus=conf.num_gpus)
 else:
-    train, val, _ = VG.splits(num_val_im=conf.val_size, filter_non_overlap=False,
+    #train, val, _ = VG.splits(num_val_im=conf.val_size, filter_non_overlap=False,
+                            #  filter_empty_rels=False, use_proposals=conf.use_proposals)
+    
+    train, val, test = VG.splits(num_val_im=conf.val_size, filter_non_overlap=False,
                               filter_empty_rels=False, use_proposals=conf.use_proposals)
+    if conf.test:
+    val = test
+                          
     train_loader, val_loader = VGDataLoader.splits(train, val, batch_size=conf.batch_size,
                                                    num_workers=conf.num_workers,
                                                    num_gpus=conf.num_gpus)
@@ -203,13 +209,26 @@ def val_batch(batch_num, b):
 
 print("Training starts now!")
 for epoch in range(start_epoch + 1, start_epoch + 1 + conf.num_epochs):
-    rez = train_epoch(epoch)
-    print("overall{:2d}: ({:.3f})\n{}".format(epoch, rez.mean(1)['total'], rez.mean(1)), flush=True)
-    mAp = val_epoch()
-    scheduler.step(mAp)
+    if conf.sl_train:
+        rez = train_epoch(epoch)
+        print("overall{:2d}: ({:.3f})\n{}".format(epoch, rez.mean(1)['total'], rez.mean(1)), flush=True)
+    elif conf.sl_rl_test:
+        mAp = val_epoch()
+        import pdb; pdb.set_trace()  
+    else:
+        print("You want testing?")
+        raise NotImplementedError
+    
+    #rez = train_epoch(epoch)
+    #print("overall{:2d}: ({:.3f})\n{}".format(epoch, rez.mean(1)['total'], rez.mean(1)), flush=True)
+    #mAp = val_epoch()
+    #scheduler.step(mAp)
 
     torch.save({
         'epoch': epoch,
         'state_dict': detector.state_dict(),
         'optimizer': optimizer.state_dict(),
     }, os.path.join(conf.save_dir, '{}-{}.tar'.format('coco' if conf.coco else 'vg', epoch)))
+    
+    mAp = val_epoch()
+    scheduler.step(mAp)
