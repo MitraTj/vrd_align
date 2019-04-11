@@ -1,3 +1,26 @@
+"""
+Training script 4 Detection # wrote by rowanz
+"""
+from dataloaders.visual_genome import VGDataLoader, VG
+from lib.object_detector import ObjectDetector
+import numpy as np
+from torch import optim
+import torch
+import pandas as pd
+import time
+import os
+from config import ModelConfig, FG_FRACTION, RPN_FG_FRACTION, IM_SCALE, BOX_SCALE
+from torch.nn import functional as F
+from lib.fpn.box_utils import bbox_loss
+import torch.backends.cudnn as cudnn
+from pycocotools.cocoeval import COCOeval
+from lib.pytorch_misc import optimistic_restore, clip_grad_norm
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+cudnn.benchmark = True
+conf = ModelConfig()
+
+
 train, val, test = VG.splits(num_val_im=conf.val_size, filter_non_overlap=False,
                             filter_empty_rels=False, use_proposals=conf.use_proposals)
 train_loader, val_loader = VGDataLoader.splits(train, val, batch_size=conf.batch_size,
