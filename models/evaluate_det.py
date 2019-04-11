@@ -1,5 +1,5 @@
 """
-Training script 4 Detection # wrote by rowanz
+Training script 4 Detection 
 """
 from dataloaders.visual_genome import VGDataLoader, VG
 from lib.object_detector import ObjectDetector
