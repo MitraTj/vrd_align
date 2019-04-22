@@ -123,7 +123,7 @@ class DynamicFilterContext(nn.Module):
         
         results = self.base_forward(*args, **kwargs)
         return results
-
+##    def sample_gumbel(shape
     def base_forward(self, fmaps, obj_logits, im_inds, rel_inds, msg_rel_inds, reward_rel_inds, im_sizes, boxes_priors=None, boxes_deltas=None, boxes_per_cls=None, obj_labels=None):
 
         assert self.mode == 'sgcls'
@@ -152,7 +152,7 @@ class DynamicFilterContext(nn.Module):
             SO_fmaps_extend = torch.cat((S_fmaps_extend, O_fmaps_extend), dim=2)
             SO_fmaps_logits = self.similar_fun(SO_fmaps_extend)
             SO_fmaps_logits = SO_fmaps_logits.view(num_rels, pooling_size_sq, pooling_size_sq) # (first dim is S_fmaps, second dim is O_fmaps)
-
+         ##   y = gumbel_softmax_sample(SO_fmaps_logit, temperature)
             SO_fmaps_scores = F.softmax(SO_fmaps_logits, dim=1)
 
             weighted_S_fmaps = torch.matmul(SO_fmaps_scores.transpose(2, 1), S_fmaps_trans) # (num_rels, 49, 49) x (num_rels, 49, self.reduce_dim)
