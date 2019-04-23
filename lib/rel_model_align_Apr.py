@@ -30,8 +30,12 @@ def myNNLinear(input_dim, output_dim, bias=True):
     ret_layer = nn.Linear(input_dim, output_dim, bias=bias)
     ret_layer.weight = torch.nn.init.xavier_normal(ret_layer.weight, gain=1.0)
     return ret_layer
-
-
+#################################################
+def sample_gumbel(shape, eps=1e-20):
+    U = torch.rand(shape).cuda()
+    return -Variable(torch.log(-torch.log(U + eps) + eps))
+temperature = 1
+##############################
 class DynamicFilterContext(nn.Module):
 
     def __init__(self, classes, rel_classes, mode='sgdet', use_vision=True,
@@ -151,8 +155,19 @@ class DynamicFilterContext(nn.Module):
             SO_fmaps_extend = torch.cat((S_fmaps_extend, O_fmaps_extend), dim=2)
             SO_fmaps_logits = self.similar_fun(SO_fmaps_extend)
             SO_fmaps_logits = SO_fmaps_logits.view(num_rels, pooling_size_sq, pooling_size_sq) # (first dim is S_fmaps, second dim is O_fmaps)
-
-            SO_fmaps_scores = F.softmax(SO_fmaps_logits, dim=1)
+            #########
+            y = gumbel_softmax_sample(SO_fmaps_logits, temperature)
+            shape = y.size()
+            _, ind = y.max(dim=-1)
+            y_hard = torch.zeros_like(y).view(-1, shape[-1])
+            y_hard.scatter_(1, ind.view(-1, 1), 1)
+            y_hard = y_hard.view(*shape)
+            y_hard = (y_hard - y).detach() + y
+            import pdb; pdb.set_trace()
+            y_hard = y_hard.view(-1,latent_dim*categorical_dim)
+            SO_fmaps_scores = F.softmax(y_hard, dim=1)
+            
+            #SO_fmaps_scores = F.softmax(SO_fmaps_logits, dim=1)
 
             weighted_S_fmaps = torch.matmul(SO_fmaps_scores.transpose(2, 1), S_fmaps_trans) # (num_rels, 49, 49) x (num_rels, 49, self.reduce_dim)
 
