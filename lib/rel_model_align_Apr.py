@@ -48,6 +48,14 @@ class DynamicFilterContext(nn.Module):
                  pooling_size=7, dropout_rate=0.2, use_bias=True, use_tanh=True, 
                  limit_vision=True, sl_pretrain=False, num_iter=-1, use_resnet=False,
                  reduce_input=False, debug_type=None, post_nms_thresh=0.5):
+        
+     '''
+    def __init__(self, classes, rel_classes, mode='sgdet', use_vision=True,
+                 embed_dim=200, hidden_dim=256, obj_dim=2048, pooling_dim=2048,
+                 pooling_size=7, dropout_rate=0.2, use_bias=True, use_tanh=True, 
+                 limit_vision=True, sl_pretrain=False, num_iter=-1, use_resnet=False,
+                 reduce_input=False, debug_type=None, post_nms_thresh=0.5, temperature=1): 
+     '''
         super(DynamicFilterContext, self).__init__()
         self.classes = classes
         self.rel_classes = rel_classes
