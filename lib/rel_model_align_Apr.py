@@ -34,6 +34,11 @@ def myNNLinear(input_dim, output_dim, bias=True):
 def sample_gumbel(shape, eps=1e-20):
     U = torch.rand(shape).cuda()
     return -Variable(torch.log(-torch.log(U + eps) + eps))
+
+def gumbel_softmax_sample(logits, temperature):
+    y = logits + sample_gumbel(logits.size())
+    return F.softmax(y / temperature, dim=-1)
+
 temperature = 1
 ##############################
 class DynamicFilterContext(nn.Module):
