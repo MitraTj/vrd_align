@@ -177,7 +177,7 @@ class DynamicFilterContext(nn.Module):
             y_hard = y_hard.view(*shape)
             y_hard = (y_hard - y).detach() + y
             import pdb; pdb.set_trace()
-            y_hard = y_hard.view(-1,latent_dim*categorical_dim)
+           # y_hard = y_hard.view(-1,latent_dim*categorical_dim)
             SO_fmaps_scores = F.softmax(y_hard, dim=1)
             
             #SO_fmaps_scores = F.softmax(SO_fmaps_logits, dim=1)
@@ -420,5 +420,6 @@ class RelModelAlign(nn.Module):
         outputs = nn.parallel.parallel_apply(replicas, [batch[i] for i in range(self.num_gpus)])
 
         if self.training:
-            return gather_res(outputs, 0, dim=0)
+            return gather_res(outputs, 0, dim=0), gumbel_softmax(logits, temperature=temperature)
+            # return gather_res(outputs, 0, dim=0)
         return outputs
