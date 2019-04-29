@@ -31,6 +31,7 @@ def myNNLinear(input_dim, output_dim, bias=True):
     ret_layer.weight = torch.nn.init.xavier_normal(ret_layer.weight, gain=1.0)
     return ret_layer
 #################################################
+'''
 def sample_gumbel(shape, eps=1e-20):
     U = torch.rand(shape).cuda()
     return -Variable(torch.log(-torch.log(U + eps) + eps))
@@ -40,21 +41,23 @@ def gumbel_softmax_sample(logits, temperature):
     return F.softmax(y / temperature, dim=-1)
 
 temperature = 1
+''''
 ##############################
+
 class DynamicFilterContext(nn.Module):
 
     def __init__(self, classes, rel_classes, mode='sgdet', use_vision=True,
                  embed_dim=200, hidden_dim=256, obj_dim=2048, pooling_dim=2048,
                  pooling_size=7, dropout_rate=0.2, use_bias=True, use_tanh=True, 
                  limit_vision=True, sl_pretrain=False, num_iter=-1, use_resnet=False,
-                 reduce_input=False, debug_type=None, post_nms_thresh=0.5):
+                 reduce_input=False, debug_type=None, post_nms_thresh=0.5, temperature=1, hard=False):
         
      '''
     def __init__(self, classes, rel_classes, mode='sgdet', use_vision=True,
                  embed_dim=200, hidden_dim=256, obj_dim=2048, pooling_dim=2048,
                  pooling_size=7, dropout_rate=0.2, use_bias=True, use_tanh=True, 
                  limit_vision=True, sl_pretrain=False, num_iter=-1, use_resnet=False,
-                 reduce_input=False, debug_type=None, post_nms_thresh=0.5, temperature=1): 
+                 reduce_input=False, debug_type=None, post_nms_thresh=0.5): 
      '''
         super(DynamicFilterContext, self).__init__()
         self.classes = classes
@@ -139,7 +142,31 @@ class DynamicFilterContext(nn.Module):
         
         results = self.base_forward(*args, **kwargs)
         return results
+ 
+    ###############################
+    def sample_gumbel(self, shape, eps=1e-10):
+        """Sample from Gumbel(0, 1)"""
+        noise = torch.rand(shape)
+        noise.add_(eps).log_().neg_()
+        noise.add_(eps).log_().neg_()     ###-log(-log(u)), u is uniform(0,1)
+        if self.gpu:
+            return noise.detach().cuda()
+        else:
+            return noise.detach()
 
+    def sample_gumbel_like(self, template_tensor, eps=1e-10):
+        uniform_samples_tensor = template_tensor.clone().uniform_()  ##### make u
+        gumble_samples_tensor = - torch.log(eps - torch.log(uniform_samples_tensor + eps)) ###-log(-log(u)), u is uniform(0,1)
+        return gumble_samples_tensor
+
+    def gumbel_softmax_sample(self, logits, temperature):
+        """ Draw a sample from the Gumbel-Softmax distribution"""
+        dim = logits.size(-1)
+        gumble_samples_tensor = self.sample_gumbel_like(logits.detach()) # 0.4
+        gumble_trick_log_prob_samples = logits + gumble_samples_tensor.detach()
+        soft_samples = F.softmax(gumble_trick_log_prob_samples / temperature, -1)  ##softmax((log(pi)+gi)/T)
+        return soft_samples
+###############################
     def base_forward(self, fmaps, obj_logits, im_inds, rel_inds, msg_rel_inds, reward_rel_inds, im_sizes, boxes_priors=None, boxes_deltas=None, boxes_per_cls=None, obj_labels=None):
 
         assert self.mode == 'sgcls'
@@ -168,26 +195,42 @@ class DynamicFilterContext(nn.Module):
             SO_fmaps_extend = torch.cat((S_fmaps_extend, O_fmaps_extend), dim=2)
             SO_fmaps_logits = self.similar_fun(SO_fmaps_extend)
             SO_fmaps_logits = SO_fmaps_logits.view(num_rels, pooling_size_sq, pooling_size_sq) # (first dim is S_fmaps, second dim is O_fmaps)
+            
+        else:
+            raise ValueError  
             #########
+    def gumbel_softmax(self, logits, temperature, training=False): 
+        if training:
             y = gumbel_softmax_sample(SO_fmaps_logits, temperature)
-            shape = y.size()
-            _, ind = y.max(dim=-1)
-            y_hard = torch.zeros_like(y).view(-1, shape[-1])
-            y_hard.scatter_(1, ind.view(-1, 1), 1)
-            y_hard = y_hard.view(*shape)
-            y_hard = (y_hard - y).detach() + y
+            _, max_value_indexes = y.detach().max(1, keepdim=True) # 0.4
+            y_hard = logits.detach().clone().zero_().scatter_(1, max_value_indexes, 1)
+            y = y_hard - y.detach() + y 
+            #shape = y.size()
+            #_, ind = y.max(dim=-1)
+            #y_hard = torch.zeros_like(y).view(-1, shape[-1])
+            #y_hard.scatter_(1, ind.view(-1, 1), 1)
+            #y_hard = y_hard.view(*shape)
+            #y_hard = (y_hard - y).detach() + y
             import pdb; pdb.set_trace()
            # y_hard = y_hard.view(-1,latent_dim*categorical_dim)
-            SO_fmaps_scores = F.softmax(y_hard, dim=1)
-            
-            #SO_fmaps_scores = F.softmax(SO_fmaps_logits, dim=1)
-
-            weighted_S_fmaps = torch.matmul(SO_fmaps_scores.transpose(2, 1), S_fmaps_trans) # (num_rels, 49, 49) x (num_rels, 49, self.reduce_dim)
-
-            last_SO_fmaps = torch.cat((weighted_S_fmaps, O_fmaps_trans), dim=2)
-            last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, self.pooling_size, self.pooling_size)
         else:
-            raise ValueError
+            _, max_value_indexes = logits.detach().max(1, keepdim=True) # 0.4
+            y = logits.detach().clone().zero_().scatter_(1, max_value_indexes, 1)  ## check if training is inference
+        return y
+            #SO_fmaps_scores = F.softmax(y, dim=1)
+            
+            ##SO_fmaps_scores = F.softmax(SO_fmaps_logits, dim=1)
+
+            #weighted_S_fmaps = torch.matmul(SO_fmaps_scores.transpose(2, 1), S_fmaps_trans) # (num_rels, 49, 49) x (num_rels, 49, self.reduce_dim)
+
+            #last_SO_fmaps = torch.cat((weighted_S_fmaps, O_fmaps_trans), dim=2)
+            #last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, self.pooling_size, self.pooling_size)
+            
+        SO_fmaps_scores = F.softmax(y, dim=1)
+        weighted_S_fmaps = torch.matmul(SO_fmaps_scores.transpose(2, 1), S_fmaps_trans) # (num_rels, 49, 49) x (num_rels, 49, self.reduce_dim)
+        last_SO_fmaps = torch.cat((weighted_S_fmaps, O_fmaps_trans), dim=2)
+        last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, self.pooling_size, self.pooling_size)
+        
 
         # for object classification
         obj_feats = self.roi_fmap_obj(obj_fmaps.view(rois.size(0), -1))
@@ -333,12 +376,22 @@ class RelModelAlign(nn.Module):
             rel_inds = torch.cat((im_inds.data[rel_cands[:, 0]][:, None], rel_cands), 1)
         return rel_inds
 
-    def forward(self, x, im_sizes, image_offset,
+    
+    '''
+     def forward(self, x, im_sizes, image_offset,
                 gt_boxes=None, gt_classes=None, gt_rels=None, proposals=None, train_anchor_inds=None,
                 return_fmap=False):
-
+    '''
+    def forward(self, x, im_sizes, image_offset,
+                gt_boxes=None, gt_classes=None, gt_rels=None, proposals=None, train_anchor_inds=None,
+                return_fmap=False, temperature=None, force_hard=False):
+        
+        if temperature == None:
+            temperature = self.temperature
         result = self.detector(x, im_sizes, image_offset, gt_boxes, gt_classes, gt_rels, proposals,
                                train_anchor_inds, return_fmap=True)
+        
+        
 
         if result.is_none():
             return ValueError("heck")
@@ -384,7 +437,8 @@ class RelModelAlign(nn.Module):
         # result.rm_obj_dists = result.rm_obj_dists_list[-1]
 
         if self.training:
-            return result
+            return result, self.gumbel_softmax(logits, temperature=temperature, training=self.training) 
+       #####return result 
 
         if self.mode == 'predcls':
             import pdb; pdb.set_trace()
