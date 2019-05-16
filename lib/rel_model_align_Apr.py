@@ -153,7 +153,7 @@ class DynamicFilterContext(nn.Module):
         gumble_trick_log_prob_samples = logits + gumble_samples_tensor.detach()
         soft_samples = F.softmax(gumble_trick_log_prob_samples / temperature, -1)  ##softmax((log(pi)+gi)/T)
         return soft_samples
-    def gumbel_softmax(self, logits, temperature, training=False):
+    def gumbel_softmax(self, logits, temperature, training=True):
         """Sample from the Gumbel-Softmax distribution and optionally discretize.
         Args:
         logits: [batch_size, n_class] unnormalized log-probs
@@ -178,7 +178,7 @@ class DynamicFilterContext(nn.Module):
         
         num_objs = obj_logits.shape[0]
         num_rels = rel_inds.shape[0]
-        temperature = 1    ##0.7
+        temperature = 1    ##0.6
         rois = torch.cat((im_inds[:, None].float(), boxes_priors), 1)
         obj_fmaps = self.obj_feature_map(fmaps, rois)
         reduce_obj_fmaps = self.reduce_obj_fmaps(obj_fmaps)
@@ -201,16 +201,17 @@ class DynamicFilterContext(nn.Module):
             SO_fmaps_extend = torch.cat((S_fmaps_extend, O_fmaps_extend), dim=2)
             SO_fmaps_logits = self.similar_fun(SO_fmaps_extend)
             SO_fmaps_logits = SO_fmaps_logits.view(num_rels, pooling_size_sq, pooling_size_sq) # (first dim is S_fmaps, second dim is O_fmaps)
-#            print('SO_fmaps_logits.shape:', SO_fmaps_logits.shape)
+#            print('SO_fmaps_logits.shape:', SO_fmaps_logits.shape)     ### [506, 25, 25]
 ##            import pdb; pdb.set_trace()
-            SO_fmaps_scores = self.gumbel_softmax(SO_fmaps_logits, temperature, training=False)
+            ########
+            SO_fmaps_scores = self.gumbel_softmax(SO_fmaps_logits, temperature, training=True)
             #SO_fmaps_scores = F.softmax(y, dim=1)
            
             weighted_S_fmaps = torch.matmul(SO_fmaps_scores.transpose(2, 1), S_fmaps_trans) # (num_rels, 49, 49) x (num_rels, 49, self.reduce_dim)
-            
-            last_SO_fmaps = torch.cat((weighted_S_fmaps, O_fmaps_trans), dim=2)
+            ## weighted_S_fmaps = [506, 25, 256]
+            last_SO_fmaps = torch.cat((weighted_S_fmaps, O_fmaps_trans), dim=2)    
             last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, self.pooling_size, self.pooling_size)
-#            print('last_SO_fmaps.shape', last_SO_fmaps.shape)
+#            print('last_SO_fmaps.shape', last_SO_fmaps.shape)   ##[506, 512, 5, 5]
        # else:
          #   raise ValueError          
 
