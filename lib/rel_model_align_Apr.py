@@ -185,6 +185,9 @@ class DynamicFilterContext(nn.Module):
 
         S_fmaps = reduce_obj_fmaps[rel_inds[:, 1]]
         O_fmaps = reduce_obj_fmaps[rel_inds[:, 2]]
+        
+        S_fmaps = F.normalize(S_fmaps, p=2, dim=-1)
+        O_fmaps = F.normalize(O_fmaps, p=2, dim=-1)
 
         if conf.debug_type in ['test1_0']:
             last_SO_fmaps = torch.cat((S_fmaps, O_fmaps), dim=1)
