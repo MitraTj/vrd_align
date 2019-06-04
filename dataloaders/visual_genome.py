@@ -253,7 +253,7 @@ def load_image_filenames(image_file, image_dir=VG_IMAGES):
         basename = '{}.jpg'.format(img['image_id'])
         if basename in corrupted_ims:
             continue
-
+###### can changed 
         if os.path.exists(os.path.join(image_dir, 'VG_100K', basename)):
             filename = os.path.join(image_dir, 'VG_100K', basename)
         elif os.path.exists(os.path.join(image_dir, 'VG_100K_2', basename)):
@@ -264,7 +264,13 @@ def load_image_filenames(image_file, image_dir=VG_IMAGES):
         fns.append(filename)
     assert len(fns) == 108073
     return fns
-
+###### to:
+#filename = os.path.join(image_dir, basename)     
+ #       if os.path.exists(filename):
+ #           fns.append(filename)
+ #   assert len(fns) == 108073
+ #   return fns
+#####
 
 def load_graphs(graphs_file, mode='train', num_im=-1, num_val_im=0, filter_empty_rels=True,
                 filter_non_overlap=False):
