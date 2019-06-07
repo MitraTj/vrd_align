@@ -395,7 +395,8 @@ class RelModelAlign(nn.Module):
         result = self.detector(x, im_sizes, image_offset, gt_boxes, gt_classes, gt_rels, proposals,
                                train_anchor_inds, return_fmap=True)
         ######################################
-        self.save.dictionary = np.array{key='fn', value=''}
+        self.save.dictionary = np.array{'key':fn, 'value'=os.path.join(data_dir), '}
+       
         #######################################
         if result.is_none():
             return ValueError("heck")
