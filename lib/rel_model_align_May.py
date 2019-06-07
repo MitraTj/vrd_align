@@ -394,9 +394,9 @@ class RelModelAlign(nn.Module):
  #           temperature = self.temperature
         result = self.detector(x, im_sizes, image_offset, gt_boxes, gt_classes, gt_rels, proposals,
                                train_anchor_inds, return_fmap=True)
-        
-        
-
+        ######################################
+        self.save.dictionary = np.array{key='fn', value=''}
+        #######################################
         if result.is_none():
             return ValueError("heck")
 
