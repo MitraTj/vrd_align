@@ -62,13 +62,24 @@ class DynamicFilterContext(nn.Module):
         self.obj_compress = myNNLinear(self.pooling_dim, self.num_classes, bias=True)
 
         # self.roi_fmap_obj = load_vgg(pretrained=False).classifier
-        roi_fmap_obj = [myNNLinear(512*self.pooling_size*self.pooling_size, 4096, bias=True),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(p=0.5),
-                        myNNLinear(4096, 4096, bias=True),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(p=0.5)]
-        self.roi_fmap_obj = nn.Sequential(*roi_fmap_obj)
+        
+        if not use_resnet:
+             roi_fmap_obj = [myNNLinear(512*self.pooling_size*self.pooling_size, 4096, bias=True),
+                             nn.ReLU(inplace=True),
+                             nn.Dropout(p=0.5),
+                             myNNLinear(4096, 4096, bias=True),
+                             nn.ReLU(inplace=True),
+                             nn.Dropout(p=0.5)]
+             self.roi_fmap_obj = nn.Sequential(*roi_fmap_obj)
+        ##### added
+        else:
+             roi_fmap_obj = [myNNLinear(256*self.pooling_size*self.pooling_size, 2048, bias=True),
+                             nn.ReLU(inplace=True),
+                             nn.Dropout(p=0.5),
+                             myNNLinear(2048, 2048, bias=True),
+                             nn.ReLU(inplace=True),
+                             nn.Dropout(p=0.5)]
+             self.roi_fmap_obj = nn.Sequential(*roi_fmap_obj)
 
         if self.use_bias:
             self.freq_bias = FrequencyBias()
@@ -81,18 +92,27 @@ class DynamicFilterContext(nn.Module):
                        myNNLinear(self.reduce_dim, 1)]
         self.similar_fun = nn.Sequential(*similar_fun)
 
-
+        if use_resnet:
+            self.roi_fmap = nn.Sequential(
+                nn.Linear(self.reduce_dim*self.pooling_size*self.pooling_size, 2048, bias=True),  #1024
+                nn.SELU(inplace=True),
+                nn.AlphaDropout(p=0.05),
+                nn.Linear(2048, 2048),
+                nn.SELU(inplace=True),
+                nn.AlphaDropout(p=0.05),
+            )
         # roi_fmap = [Flattener(),
         #     load_vgg(use_dropout=False, use_relu=False, use_linear=self.pooling_dim == 4096, pretrained=False).classifier,]
         # if self.pooling_dim != 4096:
         #     roi_fmap.append(nn.Linear(4096, self.pooling_dim))
         # self.roi_fmap = nn.Sequential(*roi_fmap)
-        roi_fmap = [Flattener(),
-                    nn.Linear(self.reduce_dim*2*self.pooling_size*self.pooling_size, 4096, bias=True),
-                    nn.ReLU(inplace=True),
-                    nn.Dropout(p=0.5),
-                    nn.Linear(4096, 4096, bias=True)]
-        self.roi_fmap = nn.Sequential(*roi_fmap)
+        else:
+            roi_fmap = [Flattener(),
+                        nn.Linear(self.reduce_dim*2*self.pooling_size*self.pooling_size, 4096, bias=True),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        nn.Linear(4096, 4096, bias=True)]
+            self.roi_fmap = nn.Sequential(*roi_fmap)
 
         self.hidden_dim = hidden_dim
         self.rel_compress = myNNLinear(self.hidden_dim*3, self.num_rels)
