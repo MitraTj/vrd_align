@@ -14,7 +14,8 @@ from lib.fpn.proposal_assignments.proposal_assignments_det import proposal_assig
 
 from lib.fpn.roi_align.functions.roi_align import RoIAlignFunction
 from lib.pytorch_misc import enumerate_by_image, gather_nd, diagonal_inds, Flattener
-from torchvision.models.vgg import vgg16
+#from torchvision.models.vgg import vgg16
+from torchvision.models.vgg import vgg19
 from torchvision.models.resnet import resnet101
 from torch.nn.parallel._functions import Gather
 
@@ -72,7 +73,7 @@ class ObjectDetector(nn.Module):
 
         self.classes = classes
         self.num_gpus = num_gpus
-        self.pooling_size = 7
+        self.pooling_size = 5
         self.nms_filter_duplicates = nms_filter_duplicates
         self.max_per_img = max_per_img
         self.use_resnet = use_resnet
@@ -81,9 +82,19 @@ class ObjectDetector(nn.Module):
         if not self.use_resnet:
             vgg_model = load_vgg()
             self.features = vgg_model.features
-            self.roi_fmap = vgg_model.classifier
+           # self.roi_fmap = vgg_model.classifier
+            self.roi_fmap = nn.Sequential(
+            nn.Linear(512 * 5 * 5, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+         #   nn.Linear(4096, num_classes),
+        )
             rpn_input_dim = 512
             output_dim = 4096
+            
 
             if conf.rl_offdropout:
                 # dropout influence the predicted poisition of bbox
@@ -99,7 +110,7 @@ class ObjectDetector(nn.Module):
                 nn.BatchNorm2d(256),
             )
             self.roi_fmap = nn.Sequential(
-                nn.Linear(256 * 7 * 7, 2048),
+                nn.Linear(256 * 5 * 5, 2048),
                 nn.SELU(inplace=True),
                 nn.AlphaDropout(p=0.05),
                 nn.Linear(2048, 2048),
