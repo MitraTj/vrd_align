@@ -4,7 +4,8 @@ import torch
 
 from config import ModelConfig
 from lib.pytorch_misc import optimistic_restore
-from lib.evaluation.sg_eval import BasicSceneGraphEvaluator
+#from lib.evaluation.sg_eval import BasicSceneGraphEvaluator
+from lib.evaluation.sg_eval import BasicSceneGraphEvaluator, calculate_mR_from_evaluator_list, eval_entry
 from tqdm import tqdm
 from config import BOX_SCALE, IM_SCALE
 import dill as pkl
