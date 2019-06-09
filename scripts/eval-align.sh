@@ -12,4 +12,11 @@ python -m pdb models/eval-rel.py -m sgcls -model align -b 1 -clip 5 -use_bias \
  -p 100 -pooling_dim 4096 -lr 1e-3 -ngpu 1 -ckpt checkpoints/debug/sgcls/debugHKSelumean/sgcls-9.tar \
  -save_dir checkpoints/debug/sgcls/debugW41hardnew -nepoch 100 -tensorboard_interval 10 -sl_rl_test \ 
  -debug_type test1_1 -pooling_size 5 -test -cache caches/Align_sgcls.pkl
+ 
+ 
+ python models/eval-rel.py -m sgcls -p 100 -clip 5 \
+ -ckpt checkpoints/debug/sgcls/debugHKSelumean/sgcls-9.tar -test -b 1 \
+ -cache caches/Align_sgcls.pkl -save_dir checkpoints/kern_rel_recall_sgcls.pkl \
+ -debug_type test1_1 -pooling_size 5 -sl_rl_test -p 100 -pooling_dim 4096 \
+ -lr 1e-3 -ngpu 1 -model align
           
