@@ -9,11 +9,12 @@ from tqdm import tqdm
 from config import BOX_SCALE, IM_SCALE
 import dill as pkl
 import os
+from lib.rel_model_align import RelModelAlign
 
 conf = ModelConfig()
 #if conf.model == 'motifnet':
 if conf.model == 'align':
-    from lib.rel_model_align import RelModel
+    from lib.rel_model_align import RelModelAlign as RelModel
 #elif conf.model == 'stanford':
     #from lib.rel_model_stanford import RelModelStanford as RelModel
 else:
@@ -22,6 +23,7 @@ else:
 train, val, test = VG.splits(num_val_im=conf.val_size, filter_duplicate_rels=True,
                           use_proposals=conf.use_proposals,
                           filter_non_overlap=conf.mode == 'sgdet')
+ind_to_predicates = train.ind_to_predicates # ind_to_predicates[0] means no relationship
 if conf.test:
     val = test
 train_loader, val_loader = VGDataLoader.splits(train, val, mode='rel',
@@ -29,19 +31,21 @@ train_loader, val_loader = VGDataLoader.splits(train, val, mode='rel',
                                                num_workers=conf.num_workers,
                                                num_gpus=conf.num_gpus)
 
-detector = RelModelAlign(classes=train.ind_to_classes, rel_classes=train.ind_to_predicates,
+    
+
+detector = RelModel(classes=train.ind_to_classes, rel_classes=train.ind_to_predicates,
                     num_gpus=conf.num_gpus, mode=conf.mode, require_overlap_det=True,
                     use_resnet=conf.use_resnet,
-                    hidden_dim=conf.hidden_dim,
                     use_proposals=conf.use_proposals,
-                    pass_in_obj_feats_to_decoder=conf.pass_in_obj_feats_to_decoder,
                     pooling_dim=conf.pooling_dim,
                     rec_dropout=conf.rec_dropout,
                     use_bias=conf.use_bias,
-                    use_tanh=conf.use_tanh,
                     limit_vision=conf.limit_vision,
-                    reduce_input = conf.reduce_input,
-                    sl_pretrain = conf.sl_pretrain
+                    #sl_pretrain=True,
+                    #num_iter=conf.num_iter,
+                    hidden_dim=conf.hidden_dim,
+                    #reduce_input=conf.reduce_input,
+                    post_nms_thresh=conf.post_nms_thresh,
                     )
 #detector = RelModel(classes=train.ind_to_classes, rel_classes=train.ind_to_predicates,
                     #num_gpus=conf.num_gpus, mode=conf.mode, require_overlap_det=True,
@@ -92,13 +96,25 @@ def val_batch(batch_num, b, evaluator, thrs=(20, 50, 100)):
             'rel_scores': pred_scores_i,
         }
         all_pred_entries.append(pred_entry)
+       #### motifs
+        #evaluator[conf.mode].evaluate_scene_graph_entry(
+         #   gt_entry,
+          #  pred_entry,
+        #)
+        
+        eval_entry(conf.mode, gt_entry, pred_entry, evaluator, evaluator_multiple_preds, 
+                   evaluator_list, evaluator_multiple_preds_list)
 
-        evaluator[conf.mode].evaluate_scene_graph_entry(
-            gt_entry,
-            pred_entry,
-        )
-
-evaluator = BasicSceneGraphEvaluator.all_modes(multiple_preds=conf.multi_pred)
+evaluator = BasicSceneGraphEvaluator.all_modes()
+evaluator_multiple_preds = BasicSceneGraphEvaluator.all_modes(multiple_preds=True)
+evaluator_list = [] # for calculating recall of each relationship except no relationship
+evaluator_multiple_preds_list = []
+for index, name in enumerate(ind_to_predicates):
+    if index == 0:
+        continue
+    evaluator_list.append((index, name, BasicSceneGraphEvaluator.all_modes()))
+    evaluator_multiple_preds_list.append((index, name, BasicSceneGraphEvaluator.all_modes(multiple_preds=True)))
+    
 if conf.cache is not None and os.path.exists(conf.cache):
     print("Found {}! Loading from it".format(conf.cache))
     with open(conf.cache,'rb') as f:
@@ -109,17 +125,28 @@ if conf.cache is not None and os.path.exists(conf.cache):
             'gt_relations': val.relationships[i].copy(),
             'gt_boxes': val.gt_boxes[i].copy(),
         }
-        evaluator[conf.mode].evaluate_scene_graph_entry(
-            gt_entry,
-            pred_entry,
-        )
-    evaluator[conf.mode].print_stats()
+
+        eval_entry(conf.mode, gt_entry, pred_entry, evaluator, evaluator_multiple_preds, 
+                   evaluator_list, evaluator_multiple_preds_list)
+    
+# evaluator = BasicSceneGraphEvaluator.all_modes(multiple_preds=conf.multi_pred)  #motif
+        
+        recall = evaluator[conf.mode].print_stats()
+        recall_mp = evaluator_multiple_preds[conf.mode].print_stats()
+        
+        mean_recall = calculate_mR_from_evaluator_list(evaluator_list, conf.mode, save_file=conf.save_rel_recall)
+        mean_recall_mp = calculate_mR_from_evaluator_list(evaluator_multiple_preds_list, conf.mode, multiple_preds=True, save_file=conf.save_rel_recall)
+    
 else:
     detector.eval()
     for val_b, batch in enumerate(tqdm(val_loader)):
-        val_batch(conf.num_gpus*val_b, batch, evaluator)
+        val_batch(conf.num_gpus*val_b, batch, evaluator, evaluator_multiple_preds, evaluator_list, evaluator_multiple_preds_list)
 
-    evaluator[conf.mode].print_stats()
+    recall = evaluator[conf.mode].print_stats()
+    recall_mp = evaluator_multiple_preds[conf.mode].print_stats()
+    
+    mean_recall = calculate_mR_from_evaluator_list(evaluator_list, conf.mode, save_file=conf.save_rel_recall)
+    mean_recall_mp = calculate_mR_from_evaluator_list(evaluator_multiple_preds_list, conf.mode, multiple_preds=True, save_file=conf.save_rel_recall)
 
     if conf.cache is not None:
         with open(conf.cache,'wb') as f:
