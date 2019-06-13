@@ -322,6 +322,7 @@ for epoch in range(start_epoch + 1, start_epoch + 1 + conf.num_epochs):
         rez = train_epoch(epoch)
     elif conf.sl_rl_test:
         mAp = val_epoch()
+        fmap_result = detector.context.output_result
         import pdb; pdb.set_trace()  
     else:
         print("You want testing?")
