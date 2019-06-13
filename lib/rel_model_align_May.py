@@ -46,6 +46,8 @@ class DynamicFilterContext(nn.Module):
         assert mode in MODES
         self.mode = mode
 
+        self.output_dict = {}
+        
         self.use_vision = use_vision 
         self.use_bias = use_bias
         self.use_tanh = use_tanh
@@ -236,6 +238,15 @@ class DynamicFilterContext(nn.Module):
             last_SO_fmaps = torch.cat((weighted_S_fmaps, O_fmaps_trans), dim=2)   #[506, 25, 512]
             last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, self.pooling_size, self.pooling_size) ##[506, 512, 5, 5]
 #            print('last_SO_fmaps.shape', last_SO_fmaps.shape)   ##[506, 512, 5, 5]
+            #######################
+            batch_size = im_inds[-1] + 1
+            assert batch_size == 1
+
+                 img_level_fmaps = last_SO_fmaps
+                 img_id  # id_list shape [batch_size]
+                 img_obj_bbox = # obj bbox
+                 self.output_dict = {img_id: {'obj_fmaps':last_SO_fmaps, 'obj_bbox':obj_bbox, 'relation_pair':rel_inds}}
+            #######################
        # else:
          #   raise ValueError          
 
