@@ -23,3 +23,9 @@ python -m pdb models/train_align.py -m sgcls -model align -b 1 -clip 5 -hidden_d
       -p 100 -pooling_dim 2048 -lr 1e-3 -ngpu 1 -ckpt checkpoints/vgdetff/vg-11.tar \
       -save_dir checkpoints/debug/sgcls/debug -nepoch 100 -tensorboard_interval 10 -sl_train \
       -debug_type test1_1 -pooling_size 5
+      
+      
+########## detector
+export CUDA_VISIBLE_DEVICES=0
+python -m pdb models/train_detector.py -b 6 -lr 1e-3 -p 100  -clip 5 -ngpu 1 -nwork 3 -save_dir checkpoints/pretrained/vgdet 
+     
