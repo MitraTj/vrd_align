@@ -239,13 +239,12 @@ class DynamicFilterContext(nn.Module):
             last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, self.pooling_size, self.pooling_size) ##[506, 512, 5, 5]
 #            print('last_SO_fmaps.shape', last_SO_fmaps.shape)   ##[506, 512, 5, 5]
             #######################
-            batch_size = im_inds[-1] + 1
+            #batch_size = im_inds[-1] + 1
             assert batch_size == 1
-
-                 img_level_fmaps = last_SO_fmaps
-                 img_id  # id_list shape [batch_size]
-                 img_obj_bbox = # obj bbox
-                 self.output_dict = {img_id: {'obj_fmaps':last_SO_fmaps, 'obj_bbox':obj_bbox, 'relation_pair':rel_inds}}
+            img_level_fmaps = last_SO_fmaps
+            img_id = obj_labels  # id_list shape [batch_size]  ##fn is label
+            img_obj_bbox = boxes_per_cls # obj bbox  #rois
+            self.output_dict = {img_id: {'obj_fmaps':last_SO_fmaps, 'obj_bbox':obj_bbox, 'relation_pair':rel_inds}}
             #######################
        # else:
          #   raise ValueError          
