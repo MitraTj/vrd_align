@@ -245,6 +245,9 @@ class DynamicFilterContext(nn.Module):
             img_id = obj_labels  # id_list shape [batch_size]  ##fn is label
             img_obj_bbox = boxes_per_cls # obj bbox  #rois
             self.output_dict = {img_id: {'obj_fmaps':last_SO_fmaps, 'obj_bbox':obj_bbox, 'relation_pair':rel_inds}}
+            pickle_out = open("dict.pickle", "wb")
+            pickle.dump(self.output_dict, pickle_out)
+            pickle_out.close()
             #######################
        # else:
          #   raise ValueError          
