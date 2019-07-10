@@ -23,6 +23,7 @@ from lib.surgery import filter_dets
 from lib.fpn.roi_align.functions.roi_align import RoIAlignFunction
 from lib.lstm.highway_lstm_cuda.alternating_highway_lstm import block_orthogonal
 import time
+from lib.ggnn import GGNNObj, GGNNRel
 
 MODES = ('sgdet', 'sgcls', 'predcls')
 conf = ModelConfig()
@@ -35,14 +36,22 @@ def myNNLinear(input_dim, output_dim, bias=True):
 class DynamicFilterContext(nn.Module):
 
     def __init__(self, classes, rel_classes, mode='sgdet', use_vision=True,
-                 embed_dim=200, hidden_dim=256, obj_dim=2048, pooling_dim=2048,
+                 embed_dim=200, hidden_dim=512, obj_dim=2048, pooling_dim=2048,
                  pooling_size=7, dropout_rate=0.2, use_bias=True, use_tanh=True, 
                  limit_vision=True, sl_pretrain=False, num_iter=-1, use_resnet=False,
-                 reduce_input=False, debug_type=None, post_nms_thresh=0.5, temperature=1, hard=False):
+                 reduce_input=False, debug_type=None, post_nms_thresh=0.5, num_obj_cls=151, 
+                 time_step_num=3, output_dim=512, use_knowledge=True, knowledge_matrix=''):
         
         super(DynamicFilterContext, self).__init__()
         self.classes = classes
         self.rel_classes = rel_classes
+        ###########
+        self.num_obj_cls = num_obj_cls
+        self.obj_proj = nn.Linear(obj_dim, hidden_dim)
+        
+		self.ggnn_obj = GGNNObj(num_obj_cls=num_obj_cls, time_step_num=time_step_num, hidden_dim=hidden_dim, 
+                                output_dim=output_dim, use_knowledge=use_knowledge, prior_matrix=knowledge_matrix)
+        ##############################################################      
         assert mode in MODES
         self.mode = mode
 
@@ -54,9 +63,7 @@ class DynamicFilterContext(nn.Module):
         self.use_highway = True
         self.limit_vision = limit_vision
         
-        self.hard = hard
-        self.gpu = False
-        self.temperature = temperature 
+        self.gpu = False 
         self.pooling_dim = pooling_dim 
         self.pooling_size = pooling_size
         self.nms_thresh = post_nms_thresh
@@ -153,47 +160,25 @@ class DynamicFilterContext(nn.Module):
         return results
  
     ###############################
-    def sample_gumbel(self, shape, eps=1e-10):
-         """Sample from Gumbel(0, 1)"""
-        noise = torch.rand(shape)
-        noise.add_(eps).log_().neg_()
-        noise.add_(eps).log_().neg_()     ###-log(-log(u)), u is uniform(0,1)
-        if self.gpu:
-            return noise.detach().cuda()
-        else:
-            return noise.detach()
-
-    def sample_gumbel_like(self, template_tensor, eps=1e-10):
-        uniform_samples_tensor = template_tensor.clone().uniform()  ##### make u
-        gumble_samples_tensor = - torch.log(eps - torch.log(uniform_samples_tensor + eps)) ###-log(-log(u)), u is uniform(0,1)
-        return gumble_samples_tensor
-
-    def gumbel_softmax_sample(self, logits, temperature):
-        """ Draw a sample from the Gumbel-Softmax distribution"""
-        dim = logits.size(-1)
-        gumble_samples_tensor = self.sample_gumbel_like(logits.detach()) # 0.4
-        gumble_trick_log_prob_samples = logits + gumble_samples_tensor.detach()
-        soft_samples = F.softmax(gumble_trick_log_prob_samples / temperature, -1)  ##softmax((log(pi)+gi)/T)
-        return soft_samples
-    def gumbel_softmax(self, logits, temperature, training=True):
-        """Sample from the Gumbel-Softmax distribution and optionally discretize.
-        Args:
-        logits: [batch_size, n_class] unnormalized log-probs
-        temperature: non-negative scalar
-        Returns:
-        [batch_size, n_class] sample from the Gumbel-Softmax distribution.
-        If hard=True, then the returned sample will be one-hot, otherwise it will
-        be a probabilitiy distribution that sums to 1 across classes
+    def forward(self, im_inds, obj_fmaps, obj_labels):
         """
-        if training:
-            y = self.gumbel_softmax_sample(logits, temperature)   ###soft_samples
-            _, max_value_indexes = y.detach().max(1, keepdim=True) # 0.4
-            y_hard = logits.detach().clone().zero_().scatter_(1, max_value_indexes, 1)
-            y = y_hard - y.detach() + y 
+        Reason object classes using knowledge of object cooccurrence
+        """
+
+        if self.mode == 'predcls':
+            # in task 'predcls', there is no need to run GGNN_obj
+            obj_dists = Variable(to_onehot(obj_labels.data, self.classes))
+            return obj_dists
         else:
-            _, max_value_indexes = logits.detach().max(1, keepdim=True) # 0.4
-            y = logits.detach().clone().zero_().scatter_(1, max_value_indexes, 1)  ## check if training is inference
-        return y
+            input_ggnn = self.obj_proj(obj_fmaps)
+
+            lengths = []
+            for i, s, e in enumerate_by_image(im_inds.data):
+                lengths.append(e - s)
+            obj_cum_add = np.cumsum([0] + lengths)
+            obj_dists = torch.cat([self.ggnn_obj(input_ggnn[obj_cum_add[i] : obj_cum_add[i+1]]) for i in range(len(lengths))], 0)
+            return obj_dists
+
     ###############################
     def base_forward(self, fmaps, obj_logits, im_inds, rel_inds, msg_rel_inds, reward_rel_inds, im_sizes, boxes_priors=None, boxes_deltas=None, boxes_per_cls=None, obj_labels=None):
         assert self.mode == 'sgcls'
@@ -254,8 +239,20 @@ class DynamicFilterContext(nn.Module):
 
         # for object classification
         obj_feats = self.roi_fmap_obj(obj_fmaps.view(rois.size(0), -1))
-        obj_logits = self.obj_compress(obj_feats)
-        obj_dists = F.softmax(obj_logits, dim=1)
+        #################################modified
+        if self.mode == 'predcls':
+            obj_logits = self.obj_compress(obj_feats)
+            obj_dists = F.softmax(obj_logits, dim=1)
+            
+        else:
+            input_ggnn = self.obj_compress(obj_feats)
+
+            lengths = []
+            for i, s, e in enumerate_by_image(im_inds.data):
+                lengths.append(e - s)
+            obj_cum_add = np.cumsum([0] + lengths)
+            obj_dists = torch.cat([self.ggnn_obj(input_ggnn[obj_cum_add[i] : obj_cum_add[i+1]]) for i in range(len(lengths))], 0)
+        ##################################
         pred_obj_cls = obj_dists[:, 1:].max(1)[1] + 1
 
         # for relationship classification
@@ -311,7 +308,9 @@ class RelModelAlign(nn.Module):
         self.hidden_dim = hidden_dim
         self.obj_dim = 2048 if use_resnet else 4096
         self.pooling_dim = pooling_dim
-
+        ##################
+        self.use_ggnn_obj=use_ggnn_obj
+        ###################
         self.use_bias = use_bias
         self.use_vision = use_vision
         self.use_tanh = use_tanh
@@ -338,7 +337,14 @@ class RelModelAlign(nn.Module):
                                             num_iter=self.num_iter,
                                             use_resnet=use_resnet,
                                             reduce_input=reduce_input,
-                                            post_nms_thresh=post_nms_thresh)
+                                            post_nms_thresh=post_nms_thresh,
+                                            ########################
+                                            obj_dim=self.obj_dim,
+                                            time_step_num=ggnn_obj_time_step_num,
+                                            hidden_dim=ggnn_obj_hidden_dim,
+                                            output_dim=ggnn_obj_output_dim,
+                                            use_knowledge=use_obj_knowledge,
+                                            knowledge_matrix=obj_knowledge)
     @property
     def num_classes(self):
         return len(self.classes)
@@ -424,7 +430,7 @@ class RelModelAlign(nn.Module):
             import pdb; pdb.set_trace()
             print('debug')
             assert self.mode == 'sgdet'
-            result.rel_labels = rel_assignments(im_inds.data, boxes.data, result.rm_obj_labels.data, result.rm_obj_dists.data,
+            result.rel_labels = rel_assignments(im_inds.data, boxes.data, result.rm_obj_labels.data, result.rm_.data,
                                                 gt_boxes.data, gt_classes.data, gt_rels.data,
                                                 image_offset, filter_non_overlap=True,
                                                 num_sample_per_gt=1)
@@ -432,6 +438,12 @@ class RelModelAlign(nn.Module):
         rel_inds = self.get_rel_inds(result.rel_labels, im_inds, boxes, result.rm_obj_dists.data)
 
         reward_rel_inds = None
+        ##########################added
+        if self.use_ggnn_obj:          
+                result.rm_obj_dists = self.ggnn_obj_reason(im_inds, 
+                                                           result.obj_fmap,
+                                                           result.rm_obj_labels if self.training or self.mode == 'predcls' else None)
+        ###################################
         
         if self.mode == 'sgdet':
             msg_rel_inds = self.get_msg_rel_inds(im_inds, boxes, result.rm_obj_dists.data)
