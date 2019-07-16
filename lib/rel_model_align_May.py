@@ -248,6 +248,19 @@ class DynamicFilterContext(nn.Module):
             pickle_out = open("dict.pickle", "wb")
             pickle.dump(self.output_dict, pickle_out)
             pickle_out.close()
+            
+            import seaborn as sns
+            last_SO_fmaps1 = O1_fmaps[1,1,:,:]
+#            last_SO_fmaps1 = last_SO_fmaps[1,1,:,:]
+       # #    last_SO_fmaps1 = last_SO_fmaps / tensor_vec.sum(0).expand_as(last_SO_fmaps1)
+            activation_map = (last_SO_fmaps1.data).cpu().numpy()
+          ##  activation_map = sns.heatmap(activation_map, linewidth=0.5)
+#            plt.clf()
+#            f = plt.figure(figsize=(8, 8.5))
+#            ax = f.add_subplot(1, 1, 1)
+        # add image
+            i = ax.imshow(activation_map, interpolation='nearest', cmap='gray')
+        # add colorbar
             #######################
        # else:
          #   raise ValueError          
