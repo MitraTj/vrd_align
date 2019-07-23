@@ -63,16 +63,19 @@ def _sort_by_score(im_inds, scores):
 MODES = ('sgdet', 'sgcls', 'predcls')
 
 
-class LinearizedContext(nn.Module):
+class DynamicFilterContext(nn.Module):
     """
     Module for computing the object contexts and edge contexts
     """
-    def __init__(self, classes, rel_classes, mode='sgdet',
-                 embed_dim=200, hidden_dim=256, obj_dim=2048,
+    def __init__(self, classes, rel_classes, mode='sgdet', use_vision=True,
+                 embed_dim=200, hidden_dim=256, obj_dim=2048, pooling_dim=2048, 
+                 pooling_size=7, use_bias=True, use_tanh=True, limit_vision=True,
+                 sl_pretrain=False, num_iter=-1, use_resnet=False, post_nms_thresh=0.5,
+                 debug_type=None,
                  nl_obj=2, nl_edge=2, dropout_rate=0.2, order='confidence',
                  pass_in_obj_feats_to_decoder=True,
                  pass_in_obj_feats_to_edge=True):
-        super(LinearizedContext, self).__init__()
+        super(DynamicFilterContext, self).__init__()
         self.classes = classes
         self.rel_classes = rel_classes
         assert mode in MODES
@@ -80,7 +83,16 @@ class LinearizedContext(nn.Module):
 
         self.nl_obj = nl_obj
         self.nl_edge = nl_edge
-
+        #################################
+        self.use_vision = use_vision
+        self.use_bias = use_bias
+        self.use_tanh = use_tanh
+        self.use_highway = True
+        self.limit_vision = limit_vision
+        self.pooling_dim = pooling_dim
+        self.pooling_size= pooling_size
+        self.post_nms_thresh = post_nms_thresh
+        ##################################
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
         self.obj_dim = obj_dim
@@ -294,14 +306,22 @@ class LinearizedContext(nn.Module):
             )
 
         return obj_dists2, obj_preds, edge_ctx
-
-
-class RelModel(nn.Module):
+#################################################################################################################
+    def obj_feature_map(self, features, rois):
+        feature_pool = RoIAlignFunction(self.pooling_size, self.pooling_size, spatial_scale=1 / 16)(
+            features, rois)
+        return feature_pool
+    def base_forward(self, fmaps, obj_logits, im_inds, rel_inds, msg_rel_inds, reward_rel_inds, im_sizes, boxes_priors=None, boxes_deltas=None, boxes_per_cls=None, obj_labels=None):
+        assert self.mode == 'sgcls'
+#################################################################################################################
+class RelModelAlign(nn.Module):
     """
     RELATIONSHIPS
     """
     def __init__(self, classes, rel_classes, mode='sgdet', num_gpus=1, use_vision=True, require_overlap_det=True,
                  embed_dim=200, hidden_dim=256, pooling_dim=2048,
+                 sl_pretrain=False, eval_rel_objs=False, num_iter=-1, reduce_input=False,
+                 post_nms_thresh=0.5,
                  nl_obj=1, nl_edge=2, use_resnet=False, order='confidence', thresh=0.01,
                  use_proposals=False, pass_in_obj_feats_to_decoder=True,
                  pass_in_obj_feats_to_edge=True, rec_dropout=0.0, use_bias=True, use_tanh=True,
@@ -318,14 +338,15 @@ class RelModel(nn.Module):
         :param hidden_dim: LSTM hidden size
         :param obj_dim:
         """
-        super(RelModel, self).__init__()
+        super(RelModelAlign, self).__init__()
         self.classes = classes
         self.rel_classes = rel_classes
         self.num_gpus = num_gpus
         assert mode in MODES
         self.mode = mode
 
-        self.pooling_size = 7
+#        self.pooling_size = 7
+        self.pooling_size = conf.pooling_size
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
         self.obj_dim = 2048 if use_resnet else 4096
@@ -336,6 +357,9 @@ class RelModel(nn.Module):
         self.use_tanh = use_tanh
         self.limit_vision=limit_vision
         self.require_overlap = require_overlap_det and self.mode == 'sgdet'
+        
+        self.num_iter = num_iter
+        self.sl_pretrain = sl_pretrain
 
         self.detector = ObjectDetector(
             classes=classes,
@@ -345,13 +369,24 @@ class RelModel(nn.Module):
             max_per_img=64,
         )
 
-        self.context = LinearizedContext(self.classes, self.rel_classes, mode=self.mode,
-                                         embed_dim=self.embed_dim, hidden_dim=self.hidden_dim,
-                                         obj_dim=self.obj_dim,
-                                         nl_obj=nl_obj, nl_edge=nl_edge, dropout_rate=rec_dropout,
-                                         order=order,
-                                         pass_in_obj_feats_to_decoder=pass_in_obj_feats_to_decoder,
-                                         pass_in_obj_feats_to_edge=pass_in_obj_feats_to_edge)
+        self.context = DynamicFilterContext(self.classes, self.rel_classes, mode=self.mode,
+                                            use_vision=self.use_vision, embed_dim=self.embed_dim, 
+                                            hidden_dim=self.hidden_dim, obj_dim=self.obj_dim, 
+                                            pooling_dim=self.pooling_dim, pooling_size=self.pooling_size, 
+                                            dropout_rate=rec_dropout, 
+                                            #########################
+                                            nl_obj=nl_obj, nl_edge=nl_edge, dropout_rate=rec_dropout,
+                                            order=order,
+                                            pass_in_obj_feats_to_decoder=pass_in_obj_feats_to_decoder,
+                                            pass_in_obj_feats_to_edge=pass_in_obj_feats_to_edge,
+                                            #########################
+                                            use_bias=self.use_bias, use_tanh=self.use_tanh,
+                                            limit_vision=self.limit_vision,
+                                            sl_pretrain = self.sl_pretrain,
+                                            num_iter=self.num_iter,
+                                            use_resnet=use_resnet,
+                                            reduce_input=reduce_input,
+                                            post_nms_thresh=post_nms_thresh)
 
         # Image Feats (You'll have to disable if you want to turn off the features from here)
         self.union_boxes = UnionBoxesAndFeats(pooling_size=self.pooling_size, stride=16,
@@ -445,8 +480,93 @@ class RelModel(nn.Module):
         """
         feature_pool = RoIAlignFunction(self.pooling_size, self.pooling_size, spatial_scale=1 / 16)(
             features, rois)
-        return self.roi_fmap_obj(feature_pool.view(rois.size(0), -1))
+        #return self.roi_fmap_obj(feature_pool.view(rois.size(0), -1))
+        return feature_pool
+    ##############################################################################################################################
+    def base_forward(self, fmaps, obj_logits, im_inds, rel_inds, msg_rel_inds, reward_rel_inds, im_sizes, boxes_priors=None, boxes_deltas=None, boxes_per_cls=None, obj_labels=None):
+        assert self.mode == 'sgcls'
+        
+        num_objs = obj_logits.shape[0]
+        num_rels = rel_inds.shape[0]
+        temperature = 1    ##0.6
+        rois = torch.cat((im_inds[:, None].float(), boxes_priors), 1)
+        obj_fmaps = self.obj_feature_map(fmaps, rois)
+        reduce_obj_fmaps = self.reduce_obj_fmaps(obj_fmaps)
 
+        S_fmaps = reduce_obj_fmaps[rel_inds[:, 1]]
+        O_fmaps = reduce_obj_fmaps[rel_inds[:, 2]]
+        
+        S_fmaps = F.normalize(S_fmaps, p=2, dim=-1)
+        O_fmaps = F.normalize(O_fmaps, p=2, dim=-1)
+
+        if conf.debug_type in ['test1_0']:
+            last_SO_fmaps = torch.cat((S_fmaps, O_fmaps), dim=1)
+        
+        elif conf.debug_type in ['test1_1']:
+
+            S_fmaps_trans = S_fmaps.view(num_rels, self.reduce_dim, self.pooling_size*self.pooling_size).transpose(2, 1)
+            O_fmaps_trans = O_fmaps.view(num_rels, self.reduce_dim, self.pooling_size*self.pooling_size).transpose(2, 1)
+
+            pooling_size_sq = self.pooling_size*self.pooling_size
+            
+             ################################# AdaHan ##########################
+            SO_fmaps_extend = torch.cat((S_fmaps_trans.unsqueeze(1).expand(-1, pooling_size_sq, -1, -1), O_fmaps_trans.unsqueeze(2).expand(-1, -1, pooling_size_sq, -1)), dim=-1).view(num_rels, pooling_size_sq*pooling_size_sq, self.redu$            ##[506, 512, 25, 25]
+            presence_vector =  self.similar_fun(SO_fmaps_extend)
+            presence_vector = presence_vector.view(num_rels, pooling_size_sq, pooling_size_sq)     ##[506, 625, 1]
+ 
+            m_vector = torch.mean(SO_fmaps_extend.transpose(2,1), dim=1).view(-1)    #[506, 25,25]  ##[259072]           
+            latent_mask = torch.where(F.softmax(presence_vector.view(-1), dim=0) >= (1/len(m_vector)), torch.ones_like(presence_vector.view(-1)), torch.zeros_like(presence_vector.view(-1)))
+            attended_vector =  m_vector * latent_mask  # zeros out the activations at masked spatial locations
+            attended_vector = attended_vector.view(num_rels,pooling_size_sq, pooling_size_sq)
+            SO_fmaps_scores = F.softmax(attended_vector, dim=1)
+
+            weighted_S_fmaps = torch.matmul(SO_fmaps_scores.transpose(2, 1), S_fmaps_trans) # (num_rels, 49, 49) x (num_rels, 49, self.reduce_dim)  ##[506, 25, 256]
+            last_SO_fmaps = torch.cat((weighted_S_fmaps, O_fmaps_trans), dim=2)   #[506, 25, 512]
+            last_SO_fmaps = last_SO_fmaps.transpose(2, 1).contiguous().view(num_rels, self.reduce_dim*2, self.pooling_size, self.pooling_size) ##[506, 512, 5, 5]
+#            print('last_SO_fmaps.shape', last_SO_fmaps.shape)   ##[506, 512, 5, 5]
+            
+            #######################
+       # else:
+         #   raise ValueError          
+
+        # for object classification
+        obj_feats = self.roi_fmap_obj(obj_fmaps.view(rois.size(0), -1))
+        obj_logits = self.obj_compress(obj_feats)
+        obj_dists = F.softmax(obj_logits, dim=1)
+        pred_obj_cls = obj_dists[:, 1:].max(1)[1] + 1
+
+        # for relationship classification
+        rel_input = self.roi_fmap(last_SO_fmaps)
+        subobj_rep = self.post_obj(obj_feats)
+        sub_rep = subobj_rep[:, :self.hidden_dim][rel_inds[:, 1]]
+        obj_rep = subobj_rep[:, self.hidden_dim:][rel_inds[:, 2]]
+
+        last_rel_input = self.reduce_rel_input(rel_input)
+        last_obj_input = self.mapping_x(torch.cat((sub_rep, obj_rep), 1))
+        triple_rep = nn.ReLU(inplace=True)(last_obj_input + last_rel_input) - (last_obj_input - last_rel_input).pow(2)
+
+        rel_logits = self.rel_compress(triple_rep)
+
+        # follow neural-motifs paper
+        if self.use_bias:
+            if self.mode in ['sgcls', 'sgdet']:
+                rel_logits = rel_logits + self.freq_bias.index_with_labels(
+                    torch.stack((
+                        pred_obj_cls[rel_inds[:, 1]],
+                        pred_obj_cls[rel_inds[:, 2]],
+                        ), 1))
+            elif self.mode == 'predcls':
+                rel_logits = rel_logits + self.freq_bias.index_with_labels(
+                    torch.stack((
+                        obj_labels[rel_inds[:, 1]],
+                        obj_labels[rel_inds[:, 2]],
+                        ), 1))
+            else:
+                raise NotImplementedError
+
+      #  return pred_obj_cls, obj_logits, rel_logits, self.gumbel_softmax(logits, temperature=temperature, training=self.training)
+        return pred_obj_cls, obj_logits, rel_logits
+  ##########################################################################################################################
     def forward(self, x, im_sizes, image_offset,
                 gt_boxes=None, gt_classes=None, gt_rels=None, proposals=None, train_anchor_inds=None,
                 return_fmap=False):
